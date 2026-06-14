@@ -1,0 +1,26 @@
+{
+  "name": "Augmentiverse Cat AR",
+  "version": "1.0.0",
+  "anchor": {
+    "type": "image-target",
+    "engine": "MindAR",
+    "sourceImage": "cat-print-target.png",
+    "compiledTarget": "targets.mind",
+    "targetIndex": 0
+  },
+  "augmentation": {
+    "type": "3d-model",
+    "format": "glb",
+    "file": "happy.glb"
+  },
+  "placement": {
+    "position": [0, 0, 0.08],
+    "rotation": [0, 0, 0],
+    "scale": [0.25, 0.25, 0.25]
+  },
+  "supportedViewers": [
+    "smartphone browser",
+    "tablet browser",
+    "Chromium/WebXR-capable AR glasses browser"
+  ]
+}
