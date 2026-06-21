@@ -138,7 +138,7 @@ video {
         if (!session || !frame.getImageTrackingResults) return;
         
         const results = frame.getImageTrackingResults();
-        const catTarget = document.querySelector("#catAugmentation");
+        const gestureContainer = document.querySelector("#gestureContainer");
         const statusEl = document.querySelector("#status");
 
         if (results.length > 0) {
@@ -151,10 +151,30 @@ video {
             const pose = frame.getPose(result.imageSpace, refSpace);
             
             if (pose) {
-              // Directly update the 3D position based on Quest Passthrough calculation
-              catTarget.object3D.matrix.fromArray(pose.transform.matrix);
-              catTarget.object3D.matrix.decompose(catTarget.object3D.position, catTarget.object3D.quaternion, catTarget.object3D.scale);
-              catTarget.setAttribute('visible', 'true');
+              // 1. Maintain tracking base position from Quest Passthrough calculations
+              gestureContainer.object3D.matrix.fromArray(pose.transform.matrix);
+              gestureContainer.object3D.matrix.decompose(gestureContainer.object3D.position, gestureContainer.object3D.quaternion, gestureContainer.object3D.scale);
+              gestureContainer.setAttribute('visible', 'true');
+              
+              // 2. Read Quest thumbsticks on the fly for live rotation and scaling
+              for (const inputSource of session.inputSources) {
+                if (inputSource.gamepad) {
+                  const axes = inputSource.gamepad.axes; 
+                  
+                  // Left/Right thumbstick moves rotate the model
+                  if (Math.abs(axes[0]) > 0.1) {
+                    gestureContainer.object3D.rotation.y += axes[0] * 0.05; 
+                  }
+                  
+                  // Up/Down thumbstick moves scale the model (Zoom)
+                  if (Math.abs(axes[1]) > 0.1) {
+                    let currentScale = gestureContainer.object3D.scale.x;
+                    let change = -axes[1] * 0.01; 
+                    let newScale = Math.min(Math.max(currentScale + change, 0.05), 1.5);
+                    gestureContainer.object3D.scale.set(newScale, newScale, newScale);
+                  }
+                }
+              }
             }
           } else {
             statusEl.textContent = "Target lost — point at the cat image";
@@ -163,7 +183,7 @@ video {
         }
       }
     });
-  </script>
+</script>
 </head>
 
 <body>
