@@ -271,16 +271,45 @@
 
       if (isHeadset) {
         try {
-          setStatus("Initializing Passthrough...", "lost");
+          setStatus("Configuring tracking matrices...", "lost");
           document.body.classList.add("hide-video");
+
+          // 1. Fetch the image directly from the asset gallery
+          const imgEl = document.querySelector('#questTargetImage');
+          if (!imgEl.complete) {
+            await new Promise((resolve) => imgEl.onload = resolve);
+          }
           
-          // Instantly execute WebXR pass request context safely 
+          // 2. Convert to an optimized hardware Bitmap
+          const bitmap = await createImageBitmap(imgEl);
+          
+          // 3. Inject explicitly into A-Frame's core WebXR component options
+          // This ensures the parameter is baked in before the hardware initializes
+          sceneEl.setAttribute('webxr', {
+            optionalFeatures: ['image-tracking', 'local-floor'],
+            requiredFeatures: []
+          });
+
+          // Wait for a single engine microtask cycle to ensure parameters bind
+          await new Promise(resolve => setTimeout(resolve, 50));
+
+          // Directly seed the underlying Three.js WebXR Manager array bypass
+          sceneEl.systems['webxr'].sessionConfiguration.trackedImages = [
+            {
+              image: bitmap,
+              widthInMeters: 0.2 // Size of a standard A4 printed paper width
+            }
+          ];
+          
+          // 4. Fire AR engine
           sceneEl.enterVR(true); 
+          setStatus("Scanning for printed image...", "lost");
         } catch (err) {
           console.error("Quest hardware setup failed:", err);
           setStatus("Quest AR Error", "lost");
         }
       } else {
+        // Mobile fallback tracking path (iOS/Android)
         try {
           const mindarSystem = sceneEl.systems["mindar-image-system"];
           await mindarSystem.start();
@@ -292,12 +321,13 @@
       }
     });
 
+    // Device status overlay updates
     targetEl.addEventListener("targetFound", () => {
-      if(!sceneEl.is('vr-mode')) setStatus("Cat image found — augmentation anchored", "found");
+      setStatus("Cat image found — augmentation anchored", "found");
     });
 
     targetEl.addEventListener("targetLost", () => {
-      if(!sceneEl.is('vr-mode')) setStatus("Target lost — point at the cat image", "lost");
+      setStatus("Target lost — point at the cat image", "lost");
     });
   </script>
 </body>
