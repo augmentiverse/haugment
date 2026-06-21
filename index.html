@@ -176,36 +176,29 @@ video {
 
   <button id="startButton">Start AR</button>
 
-  <a-scene
-    id="scene"
-    quest-image-tracker
-    webxr="optionalFeatures: image-tracking;"
-    mindar-image="
-      imageTargetSrc: targets.mind;
-      autoStart: false;
-      uiScanning: yes;
-      filterMinCF: 0.0001;
-      filterBeta: 0.001;
-      warmupTolerance: 5;
-      missTolerance: 5;
-    "
-    embedded
-    color-space="sRGB"
-    renderer="colorManagement: true; antialias: true; alpha: true"
-    vr-mode-ui="enabled: true" 
-    device-orientation-permission-ui="enabled: false">
+ <a-scene
+  id="scene"
+  gesture-detector
+  quest-image-tracker
+  webxr="optionalFeatures: image-tracking;"
+  mindar-image="imageTargetSrc: targets.mind; autoStart: false;"
+  embedded
+  renderer="colorManagement: true; antialias: true; alpha: true">
 
-    <a-assets timeout="30000">
-      <a-asset-item id="anchoredModel" src="happy.glb"></a-asset-item>
-      <img id="questTargetImage" src="cat-print-target.png" response-type="arraybuffer" crossorigin="anonymous">
-    </a-assets>
+  <a-assets timeout="30000">
+    <a-asset-item id="anchoredModel" src="happy.glb"></a-asset-item>
+    <img id="questTargetImage" src="cat-target.jpg" crossorigin="anonymous">
+  </a-assets>
 
-    <a-camera position="0 0 0" look-controls="false"></a-camera>
+  <a-camera position="0 0 0" look-controls="false"></a-camera>
 
-    <a-light type="ambient" intensity="1.2"></a-light>
-    <a-light type="directional" position="0 1 1" intensity="0.8"></a-light>
-
-    <a-entity id="catTarget" mindar-image-target="targetIndex: 0">
+  <a-entity id="catTarget" mindar-image-target="targetIndex: 0">
+    
+    <a-entity
+      id="gestureContainer"
+      class="clickable"
+      gesture-handler="minScale: 0.05; maxScale: 1.5;"
+    >
       
       <a-gltf-model
         id="catAugmentation"
