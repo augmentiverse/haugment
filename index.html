@@ -224,19 +224,22 @@
       <img id="questTargetImage" src="cat-target.jpg" crossorigin="anonymous">
     </a-assets>
 
-    <a-camera position="0 0 0" look-controls="false"></a-camera>
+    <a-camera position="0 0 0" look-controls="false">
+      <a-cursor raycaster="objects: .clickable" fuse="false"></a-cursor>
+    </a-camera>
 
     <a-entity id="catTarget" mindar-image-target="targetIndex: 0">
   
       <a-entity 
         id="gestureContainer" 
         class="clickable"
+        visible="true"
         gesture-handler="minScale: 0.05; maxScale: 2.0;">
         
         <a-gltf-model
           id="catAugmentation"
           src="#anchoredModel"
-          position="0 0 0.08"
+          position="0 0 0"
           rotation="0 0 0"
           scale="0.25 0.25 0.25"
           animation-mixer>
@@ -245,9 +248,11 @@
         <a-text
           id="catDescription"
           value="Happy Cat"
-          position="0 -0.4 0.1" 
+          position="0 -0.5 0.2" 
+          scale="0.5 0.5 0.5"
+          color="#FFFFFF"
           align="center"
-          width="2">
+          width="4">
         </a-text>
 
       </a-entity>
