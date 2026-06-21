@@ -11,18 +11,20 @@
   <script src="https://raw.githack.com/fcor/aframe-gesture-detector-component/master/dist/aframe-gesture-detector.component.min.js"></script>
   
   <style>
-    html, body {
+    /* CRITICAL TRANS-IOS RECOVERY: Force total transparency on all background layers */
+    html, body, a-scene {
+      background-color: transparent !important;
+      background: transparent !important;
       margin: 0;
       width: 100%;
       height: 100%;
       overflow: hidden;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: transparent !important;
     }
 
     #overlay {
       position: fixed;
-      z-index: 999; /* Ensure UI layers sit cleanly above the 3D canvas */
+      z-index: 9999;
       inset: 0;
       pointer-events: none;
       display: flex;
@@ -58,7 +60,7 @@
 
     #startButton {
       position: fixed;
-      z-index: 1000;
+      z-index: 10000;
       left: 50%;
       bottom: 28px;
       transform: translateX(-50%);
@@ -76,15 +78,15 @@
 
     #startButton.hidden { display: none; }
 
-    /* Fix iOS layer composition: ensure MindAR camera sits at the baseline */
+    /* Force Safari camera video to stay locked underneath the WebGL layer */
     body > video {
       position: absolute !important;
       top: 0;
       left: 0;
-      width: 100% !important;
-      height: 100% !important;
+      width: 100vw !important;
+      height: 100vh !important;
       object-fit: cover !important;
-      z-index: -2 !important;
+      z-index: -10 !important;
       display: block !important;
     }
 
@@ -120,7 +122,7 @@
               }
             ];
           } catch (e) {
-            console.error("WebXR configuration inject failed:", e);
+            console.error("WebXR setup failure:", e);
           }
         });
       }
@@ -199,7 +201,6 @@
           if (sceneEl.is('vr-mode')) {
             const catTarget = document.querySelector('#catTarget');
             const intersection = evt.detail.intersection.point;
-            
             catTarget.object3D.position.set(intersection.x, intersection.y, intersection.z);
             catTarget.object3D.visible = true;
             
@@ -216,7 +217,7 @@
 <body>
   <div id="overlay">
     <div id="topbar">
-      Point camera at your printed image target. Rotate and scale using screen pinch gestures (Mobile) or Controller Thumbsticks (Quest).
+      Point camera at your printed image target. Rotate/scale using pinch gestures (Mobile) or Controller Thumbsticks (Quest).
     </div>
     <div id="status" class="lost">AR Initialize Ready</div>
   </div>
@@ -231,7 +232,7 @@
     webxr="optionalFeatures: image-tracking, local-floor;"
     mindar-image="imageTargetSrc: targets.mind; autoStart: false; uiScanning: no;"
     embedded
-    renderer="colorManagement: true; antialias: true; alpha: true;">
+    renderer="colorManagement: true; antialias: true; alpha: true; logarithmicDepthBuffer: true;">
 
     <a-assets timeout="30000">
       <a-asset-item id="anchoredModel" src="happy.glb"></a-asset-item>
@@ -242,13 +243,12 @@
       <a-cursor raycaster="objects: .clickable" fuse="false"></a-cursor>
     </a-camera>
 
-    <a-entity light="type: ambient; color: #BBB; intensity: 1.0;"></a-entity>
-    <a-entity light="type: directional; color: #FFF; intensity: 0.8" position="-0.5 1 1"></a-entity>
+    <a-entity light="type: ambient; color: #FFF; intensity: 1.2;"></a-entity>
+    <a-entity light="type: directional; color: #FFF; intensity: 0.8" position="-1 2 1"></a-entity>
 
     <a-plane position="0 -0.01 0" rotation="-90 0 0" width="100" height="100" visible="false" class="clickable" quest-fallback-click></a-plane>
 
     <a-entity id="catTarget" mindar-image-target="targetIndex: 0">
-      
       <a-entity 
         id="gestureContainer" 
         class="clickable"
@@ -259,16 +259,16 @@
           src="#anchoredModel"
           position="0 0 0"
           rotation="0 0 0"
-          scale="0.25 0.25 0.25"
+          scale="1 1 1"
           animation-mixer>
         </a-gltf-model>
 
         <a-text
           id="catDescription"
-          value="My Happy Cat"
-          position="0 -0.5 0.2" 
-          scale="0.5 0.5 0.5"
-          color="#FFFFFF"
+          value="Happy Cat"
+          position="0 -0.4 0.1" 
+          scale="0.6 0.6 0.6"
+          color="#00FF00"
           align="center"
           width="4">
         </a-text>
@@ -292,7 +292,6 @@
       statusEl.classList.add(className);
     }
 
-    // Standard video configuration patches for Apple iOS execution restrictions
     function patchIOSVideoElements() {
       const checkVideoInterval = setInterval(() => {
         const videos = document.querySelectorAll('video');
@@ -302,11 +301,11 @@
             video.setAttribute('webkit-playsinline', '');
             video.setAttribute('muted', '');
             video.muted = true;
-            video.play().catch(e => console.log("iOS AutoPlay catch triggered:", e));
+            video.play().catch(e => console.log("iOS Video loop catch triggered:", e));
           });
           clearInterval(checkVideoInterval);
         }
-      }, 250);
+      }, 200);
     }
 
     startButton.addEventListener("click", () => {
@@ -323,9 +322,7 @@
         }
       } else {
         try {
-          // Fire iOS background patches right away
           patchIOSVideoElements();
-          
           const mindarSystem = sceneEl.systems["mindar-image-system"];
           if (mindarSystem) {
             mindarSystem.start();
