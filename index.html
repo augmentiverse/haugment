@@ -16,7 +16,7 @@
       height: 100%;
       overflow: hidden;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #000;
+      background: transparent;
     }
 
     #overlay {
@@ -73,6 +73,26 @@
     }
 
     #startButton.hidden { display: none; }
+    /* Force the camera video element to the very back layer */
+video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+  z-index: 1;
+}
+
+/* Force the 3D graphics canvas to sit right on top of the video but remain see-through */
+.a-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+}
   </style>
 
   <script>
