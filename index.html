@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+  <title>Augmentiverse Cat AR — Multi-Platform</title>
+
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/aframe-extras@7.5.1/dist/aframe-extras.min.js"></script>
+<script src="https://raw.githack.com/fcor/aframe-gesture-detector-component/master/dist/aframe-gesture-detector.component.min.js"></script>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: transparent;
+    }
+
+    #overlay {
+      position: fixed;
+      z-index: 20;
+      inset: 0;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    #topbar {
+      margin: 12px;
+      padding: 10px 12px;
+      max-width: 520px;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.62);
+      color: white;
+      font-size: 14px;
+      line-height: 1.35;
+      backdrop-filter: blur(8px);
+    }
+
+    #status {
+      margin: 12px;
+      align-self: flex-start;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.62);
+      color: white;
+      font-size: 13px;
+      backdrop-filter: blur(8px);
+    }
+
+    .found { background: rgba(0, 120, 60, 0.75) !important; }
+    .lost { background: rgba(130, 70, 0, 0.75) !important; }
+
+    #startButton {
+      position: fixed;
+      z-index: 30;
+      left: 50%;
+      bottom: 28px;
+      transform: translateX(-50%);
+      padding: 14px 22px;
+      border: 0;
+      border-radius: 999px;
+      background: white;
+      color: black;
+      font-weight: 700;
+      font-size: 15px;
+      cursor: pointer;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+    }
+
+    #startButton.hidden { display: none; }
+    /* Force the camera video element to the very back layer */
+video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover;
+  z-index: 1;
+}
+
+/* Force the 3D graphics canvas to sit right on top of the video but remain see-through */
+.a-canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 2;
+}
+  </style>
+
+  <script>
+    // Custom native WebXR Image Tracking component for Meta Quest
+    AFRAME.registerComponent('quest-image-tracker', {
+      init: function () {
+        const sceneEl = this.el;
+        
+        sceneEl.addEventListener('enter-vr', async () => {
+          // Verify if we are entering an AR session on a headset
+          if (sceneEl.is('vr-mode') && navigator.xr) {
+            const statusEl = document.querySelector("#status");
+            statusEl.textContent = "Quest AR Active: Scan your target image...";
+            
+            // Get the raw image bitmap for native Quest pipeline
+            const imgEl = document.querySelector('#questTargetImage');
+            const bitmap = await createImageBitmap(imgEl);
+            
+            // Reconfigure WebXR session features on the fly for the Quest hardware
+            sceneEl.renderer.xr.addEventListener('sessionstart', async () => {
+              const session = sceneEl.renderer.xr.getSession();
+              
+              // Tell the Quest hardware directly what image to look for
+              session.updateTrackedImagesProfiles && session.updateTrackedImagesProfiles([
+                {
+                  image: bitmap,
+                  widthInMeters: 0.2 // Set this to the estimated size of your printed paper
+                }
+              ]);
+            });
+          }
+        });
+      },
+      
+      tick: function () {
+        const sceneEl = this.el;
+        if (!sceneEl.is('vr-mode')) return;
+        
+        const frame = sceneEl.frame;
+        if (!frame) return;
+        
+        const session = sceneEl.renderer.xr.getSession();
+        if (!session || !frame.getImageTrackingResults) return;
+        
+        const results = frame.getImageTrackingResults();
+        const gestureContainer = document.querySelector("#gestureContainer");
+        const statusEl = document.querySelector("#status");
+
+        if (results.length > 0) {
+          const result = results[0];
+          if (result.trackingState === 'tracked') {
+            statusEl.textContent = "Cat image found — Matrix anchored";
+            statusEl.className = "found";
+            
+            const refSpace = sceneEl.renderer.xr.getReferenceSpace();
+            const pose = frame.getPose(result.imageSpace, refSpace);
+            
+            if (pose) {
+              // 1. Maintain tracking base position from Quest Passthrough calculations
+              gestureContainer.object3D.matrix.fromArray(pose.transform.matrix);
+              gestureContainer.object3D.matrix.decompose(gestureContainer.object3D.position, gestureContainer.object3D.quaternion, gestureContainer.object3D.scale);
+              gestureContainer.setAttribute('visible', 'true');
+              
+              // 2. Read Quest thumbsticks on the fly for live rotation and scaling
+              for (const inputSource of session.inputSources) {
+                if (inputSource.gamepad) {
+                  const axes = inputSource.gamepad.axes; 
+                  
+                  // Left/Right thumbstick moves rotate the model
+                  if (Math.abs(axes[0]) > 0.1) {
+                    gestureContainer.object3D.rotation.y += axes[0] * 0.05; 
+                  }
+                  
+                  // Up/Down thumbstick moves scale the model (Zoom)
+                  if (Math.abs(axes[1]) > 0.1) {
+                    let currentScale = gestureContainer.object3D.scale.x;
+                    let change = -axes[1] * 0.01; 
+                    let newScale = Math.min(Math.max(currentScale + change, 0.05), 1.5);
+                    gestureContainer.object3D.scale.set(newScale, newScale, newScale);
+                  }
+                }
+              }
+            }
+          } else {
+            statusEl.textContent = "Target lost — point at the cat image";
+            statusEl.className = "lost";
+          }
+        }
+      }
+    });
+</script>
+</head>
+
+<body>
+  <div id="overlay">
+    <div id="topbar">
+      Point your camera at the printed cat image. The GLB object will appear anchored above the image.
+    </div>
+    <div id="status" class="lost">Target not found</div>
+  </div>
+
+  <button id="startButton">Start AR</button>
+
+ <a-scene
+  id="scene"
+  gesture-detector
+  quest-image-tracker
+  webxr="optionalFeatures: image-tracking;"
+  mindar-image="imageTargetSrc: targets.mind; autoStart: false;"
+  embedded
+  renderer="colorManagement: true; antialias: true; alpha: true">
+
+  <a-assets timeout="30000">
+    <a-asset-item id="anchoredModel" src="happy.glb"></a-asset-item>
+    <img id="questTargetImage" src="cat-target.png" crossorigin="anonymous">
+  </a-assets>
+
+  <a-camera position="0 0 0" look-controls="false"></a-camera>
+
+  <!-- <a-entity id="catTarget" mindar-image-target="targetIndex: 0">
+    
+   <a-entity
+      id="gestureContainer"
+      class="clickable"
+      gesture-handler="minScale: 0.05; maxScale: 1.5;"
+    >
+      
+      <a-gltf-model
+        id="catAugmentation"
+        src="#anchoredModel"
+        position="0 0 0.08"
+        rotation="0 0 0"
+        scale="0.25 0.25 0.25"
+        animation-mixer
+        animation__float="
+          property: position;
+          from: 0 0 0.08;
+          to: 0 0.04 0.12;
+          dur: 1800;
+          dir: alternate;
+          easing: easeInOutSine;
+          loop: true">
+      </a-gltf-model>
+      <a-text
+  id="catDescription"
+  value="Happy Cat\nThis is a 3D digital representation of the our cat Happy."
+  position="0 -0.4 0.1" 
+  rotation="0 0 0"
+  scale="0.4 0.4 0.4"
+  color="#FFFFFF"
+  align="center"
+  font="kelsonsans"
+  width="2">
+</a-text>
+
+    </a-entity> -->
+
+    <a-entity id="catTarget" mindar-image-target="targetIndex: 0">
+  
+  <a-entity 
+    id="gestureContainer" 
+    gesture-handler="minScale: 0.05; maxScale: 2.0;">
+    
+    <a-gltf-model
+      id="catAugmentation"
+      src="#anchoredModel"
+      position="0 0 0.08"
+      rotation="0 0 0"
+      scale="0.25 0.25 0.25"
+      animation-mixer>
+    </a-gltf-model>
+
+    <a-text
+      id="catDescription"
+      value="Happy Cat"
+      position="0 -0.4 0.1" 
+      align="center"
+      width="2">
+    </a-text>
+
+  </a-entity>
+
+</a-entity>
+
+    
+  </a-scene>
+
+  <script>
+    const sceneEl = document.querySelector("#scene");
+    const startButton = document.querySelector("#startButton");
+    const statusEl = document.querySelector("#status");
+    const targetEl = document.querySelector("#catTarget");
+
+    // Detect if user is on a standard mobile browser vs a standalone XR headset
+    const isHeadset = /Quest|Oculus|Pico/i.test(navigator.userAgent);
+
+    function setStatus(text, className) {
+      statusEl.textContent = text;
+      statusEl.classList.remove("found", "lost");
+      statusEl.classList.add(className);
+    }
+
+    startButton.addEventListener("click", async () => {
+      startButton.classList.add("hidden");
+
+      if (isHeadset) {
+        // Headset routine: Bypass MindAR camera pipeline entirely and launch native WebXR Passthrough
+        sceneEl.enterVR(); 
+      } else {
+        // Mobile routine: Use standard MindAR video pixel processing
+        try {
+          const mindarSystem = sceneEl.systems["mindar-image-system"];
+          await mindarSystem.start();
+          setStatus("Scanning for cat image…", "lost");
+        } catch (error) {
+          console.error(error);
+          setStatus("Camera/AR failed to start", "lost");
+        }
+      }
+    });
+
+    // Listeners for Mobile Path
+    targetEl.addEventListener("targetFound", () => {
+      if(!sceneEl.is('vr-mode')) setStatus("Cat image found — augmentation anchored", "found");
+    });
+
+    targetEl.addEventListener("targetLost", () => {
+      if(!sceneEl.is('vr-mode')) setStatus("Target lost — point at the cat image", "lost");
+    });
+
+    window.addEventListener("beforeunload", () => {
+      const mindarSystem = sceneEl.systems["mindar-image-system"];
+      if (mindarSystem && !isHeadset) {
+        mindarSystem.stop();
+      }
+    });
+  </script>
+</body>
+</html>
