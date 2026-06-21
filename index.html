@@ -75,7 +75,6 @@
 
     #startButton.hidden { display: none; }
 
-    /* Hide standard 2D flat video pipeline when headset is active */
     .hide-video video {
       display: none !important;
       opacity: 0 !important;
@@ -102,6 +101,29 @@
   </style>
 
   <script>
+    // FIX: Core system component handles WebXR lifecycle safely to prevent "AR Errors"
+    AFRAME.registerSystem('quest-xr-handler', {
+      init: function () {
+        const sceneEl = this.sceneEl;
+        
+        sceneEl.addEventListener('webxrsessionrequested', async () => {
+          const imgEl = document.querySelector('#questTargetImage');
+          if (imgEl) {
+            if (!imgEl.complete) await new Promise(r => imgEl.onload = r);
+            const bitmap = await createImageBitmap(imgEl);
+            
+            // Assign parameters during initialization handshake safe zone
+            sceneEl.systems['webxr'].sessionConfiguration.trackedImages = [
+              {
+                image: bitmap,
+                widthInMeters: 0.2
+              }
+            ];
+          }
+        });
+      }
+    });
+
     AFRAME.registerComponent('quest-image-tracker', {
       init: function () {
         this.userRotationY = 0;
@@ -110,8 +132,6 @@
       
       tick: function () {
         const sceneEl = this.el;
-        
-        // Match both vr-mode checks or direct XR active states
         const session = sceneEl.renderer.xr.getSession();
         if (!session || !sceneEl.is('vr-mode')) return;
         
@@ -184,16 +204,17 @@
 
   <a-scene
     id="scene"
+    quest-xr-handler
     gesture-detector
     quest-image-tracker
-    webxr="optionalFeatures: image-tracking; requiredFeatures: local-floor;"
+    webxr="optionalFeatures: image-tracking, local-floor;"
     mindar-image="imageTargetSrc: targets.mind; autoStart: false;"
     embedded
     renderer="colorManagement: true; antialias: true; alpha: true;">
 
     <a-assets timeout="30000">
       <a-asset-item id="anchoredModel" src="happy.glb"></a-asset-item>
-      <img id="questTargetImage" src="cat-target.jpg" crossorigin="anonymous">
+      <img id="questTargetImage" src="cat-print-target.png" crossorigin="anonymous">
     </a-assets>
 
     <a-camera position="0 0 0" look-controls="false">
@@ -250,25 +271,10 @@
 
       if (isHeadset) {
         try {
-          setStatus("Initializing Quest Hardware...", "lost");
+          setStatus("Initializing Passthrough...", "lost");
           document.body.classList.add("hide-video");
-
-          const imgEl = document.querySelector('#questTargetImage');
-          if (!imgEl.complete) {
-            await new Promise((resolve) => imgEl.onload = resolve);
-          }
-          const bitmap = await createImageBitmap(imgEl);
           
-          if (sceneEl.systems['webxr']) {
-            sceneEl.systems['webxr'].sessionConfiguration.trackedImages = [
-              {
-                image: bitmap,
-                widthInMeters: 0.2
-              }
-            ];
-          }
-          
-          // CRITICAL FIX: Passing true tells A-Frame to use AR passthrough instead of VR space
+          // Instantly execute WebXR pass request context safely 
           sceneEl.enterVR(true); 
         } catch (err) {
           console.error("Quest hardware setup failed:", err);
