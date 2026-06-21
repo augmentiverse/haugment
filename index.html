@@ -17,12 +17,12 @@
       height: 100%;
       overflow: hidden;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: transparent;
+      background: transparent !important;
     }
 
     #overlay {
       position: fixed;
-      z-index: 20;
+      z-index: 999; /* Ensure UI layers sit cleanly above the 3D canvas */
       inset: 0;
       pointer-events: none;
       display: flex;
@@ -58,7 +58,7 @@
 
     #startButton {
       position: fixed;
-      z-index: 30;
+      z-index: 1000;
       left: 50%;
       bottom: 28px;
       transform: translateX(-50%);
@@ -76,40 +76,39 @@
 
     #startButton.hidden { display: none; }
 
+    /* Fix iOS layer composition: ensure MindAR camera sits at the baseline */
+    body > video {
+      position: absolute !important;
+      top: 0;
+      left: 0;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+      z-index: -2 !important;
+      display: block !important;
+    }
+
     .hide-video video {
       display: none !important;
       opacity: 0 !important;
     }
 
-    video {
-      position: absolute;
+    .a-canvas {
+      position: absolute !important;
       top: 0;
       left: 0;
       width: 100% !important;
       height: 100% !important;
-      object-fit: cover;
-      z-index: 1;
-    }
-
-    .a-canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 2;
+      z-index: 1 !important;
     }
   </style>
 
   <script>
-    // System to safely bake the image target configuration into the WebXR initialization loop
     AFRAME.registerSystem('quest-xr-handler', {
       init: function () {
         const sceneEl = this.sceneEl;
-        
         sceneEl.addEventListener('webxrsessionrequested', async () => {
           try {
-            // Fetch as blob to prevent CORS token handshake drops on GitHub pages
             const response = await fetch('cat-print-target.png', { mode: 'cors' });
             const blob = await response.blob();
             const bitmap = await createImageBitmap(blob);
@@ -127,7 +126,6 @@
       }
     });
 
-    // Component to continuously process Quest matrix updates and controller movements
     AFRAME.registerComponent('quest-image-tracker', {
       init: function () {
         this.userRotationY = 0;
@@ -157,7 +155,6 @@
             const pose = frame.getPose(result.imageSpace, refSpace);
             
             if (pose) {
-              // Position the Layer 1 Tracking Node
               catTarget.object3D.position.set(
                 pose.transform.position.x,
                 pose.transform.position.y,
@@ -171,7 +168,6 @@
               );
               catTarget.object3D.visible = true;
 
-              // Extract Thumbstick vectors without breaking positional anchors
               for (const inputSource of session.inputSources) {
                 if (inputSource.gamepad) {
                   const axes = inputSource.gamepad.axes; 
@@ -185,7 +181,6 @@
                 }
               }
 
-              // Apply gestures directly on Layer 2 container
               gestureContainer.object3D.rotation.y = this.userRotationY;
               gestureContainer.object3D.scale.set(this.userScaleMod, this.userScaleMod, this.userScaleMod);
             }
@@ -197,7 +192,6 @@
       }
     });
 
-    // Fallback placement mechanism via controller click if local lighting is poor
     AFRAME.registerComponent('quest-fallback-click', {
       init: function () {
         this.el.addEventListener('click', (evt) => {
@@ -235,7 +229,7 @@
     gesture-detector
     quest-image-tracker
     webxr="optionalFeatures: image-tracking, local-floor;"
-    mindar-image="imageTargetSrc: targets.mind; autoStart: false;"
+    mindar-image="imageTargetSrc: targets.mind; autoStart: false; uiScanning: no;"
     embedded
     renderer="colorManagement: true; antialias: true; alpha: true;">
 
@@ -248,14 +242,16 @@
       <a-cursor raycaster="objects: .clickable" fuse="false"></a-cursor>
     </a-camera>
 
+    <a-entity light="type: ambient; color: #BBB; intensity: 1.0;"></a-entity>
+    <a-entity light="type: directional; color: #FFF; intensity: 0.8" position="-0.5 1 1"></a-entity>
+
     <a-plane position="0 -0.01 0" rotation="-90 0 0" width="100" height="100" visible="false" class="clickable" quest-fallback-click></a-plane>
 
-    <a-entity id="catTarget" mindar-image-target="targetIndex: 0" visible="true">
+    <a-entity id="catTarget" mindar-image-target="targetIndex: 0">
       
       <a-entity 
         id="gestureContainer" 
         class="clickable"
-        visible="true"
         gesture-handler="minScale: 0.05; maxScale: 2.0;">
         
         <a-gltf-model
@@ -269,7 +265,7 @@
 
         <a-text
           id="catDescription"
-          value="My Cat Happy :)"
+          value="My Happy Cat"
           position="0 -0.5 0.2" 
           scale="0.5 0.5 0.5"
           color="#FFFFFF"
@@ -296,6 +292,23 @@
       statusEl.classList.add(className);
     }
 
+    // Standard video configuration patches for Apple iOS execution restrictions
+    function patchIOSVideoElements() {
+      const checkVideoInterval = setInterval(() => {
+        const videos = document.querySelectorAll('video');
+        if (videos.length > 0) {
+          videos.forEach(video => {
+            video.setAttribute('playsinline', '');
+            video.setAttribute('webkit-playsinline', '');
+            video.setAttribute('muted', '');
+            video.muted = true;
+            video.play().catch(e => console.log("iOS AutoPlay catch triggered:", e));
+          });
+          clearInterval(checkVideoInterval);
+        }
+      }, 250);
+    }
+
     startButton.addEventListener("click", () => {
       startButton.classList.add("hidden");
 
@@ -310,6 +323,9 @@
         }
       } else {
         try {
+          // Fire iOS background patches right away
+          patchIOSVideoElements();
+          
           const mindarSystem = sceneEl.systems["mindar-image-system"];
           if (mindarSystem) {
             mindarSystem.start();
