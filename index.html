@@ -75,6 +75,13 @@
 
     #startButton.hidden { display: none; }
 
+    /* Fix: Prevent MindAR video overlays from rendering over WebXR canvas on Headsets */
+    .hide-video video {
+      display: none !important;
+      opacity: 0 !important;
+      visibility: hidden !important;
+    }
+
     video {
       position: absolute;
       top: 0;
@@ -96,34 +103,11 @@
   </style>
 
   <script>
-    // Custom native WebXR Image Tracking component for Meta Quest
+    // Handles Quest-specific frame tracking updates
     AFRAME.registerComponent('quest-image-tracker', {
       init: function () {
-        const sceneEl = this.el;
-        
-        // Persistent values for Quest inputs so tracking loops don't wipe them out
         this.userRotationY = 0;
         this.userScaleMod = 1.0;
-        
-        sceneEl.addEventListener('enter-vr', async () => {
-          if (sceneEl.is('vr-mode') && navigator.xr) {
-            const statusEl = document.querySelector("#status");
-            statusEl.textContent = "Quest AR Active: Scan your target image...";
-            
-            const imgEl = document.querySelector('#questTargetImage');
-            const bitmap = await createImageBitmap(imgEl);
-            
-            sceneEl.renderer.xr.addEventListener('sessionstart', async () => {
-              const session = sceneEl.renderer.xr.getSession();
-              session.updateTrackedImagesProfiles && session.updateTrackedImagesProfiles([
-                {
-                  image: bitmap,
-                  widthInMeters: 0.2 
-                }
-              ]);
-            });
-          }
-        });
       },
       
       tick: function () {
@@ -137,6 +121,7 @@
         if (!session || !frame.getImageTrackingResults) return;
         
         const results = frame.getImageTrackingResults();
+        const catTarget = document.querySelector("#catTarget");
         const gestureContainer = document.querySelector("#gestureContainer");
         const statusEl = document.querySelector("#status");
 
@@ -150,33 +135,25 @@
             const pose = frame.getPose(result.imageSpace, refSpace);
             
             if (pose) {
-              // 1. Maintain base position & orientation tracking metrics
-              gestureContainer.object3D.matrixAutoUpdate = true;
-              
-              gestureContainer.object3D.position.set(
+              catTarget.object3D.position.set(
                 pose.transform.position.x,
                 pose.transform.position.y,
                 pose.transform.position.z
               );
-              
-              gestureContainer.object3D.quaternion.set(
+              catTarget.object3D.quaternion.set(
                 pose.transform.orientation.x,
                 pose.transform.orientation.y,
                 pose.transform.orientation.z,
                 pose.transform.orientation.w
               );
-              
-              // 2. Continuous accumulation from Quest Thumbsticks
+              catTarget.object3D.visible = true;
+
               for (const inputSource of session.inputSources) {
                 if (inputSource.gamepad) {
                   const axes = inputSource.gamepad.axes; 
-                  
-                  // Left/Right stick input adjusts rotation
                   if (Math.abs(axes[0]) > 0.1) {
-                    this.userRotationY += axes[0] * 0.05; 
+                    this.userRotationY += axes[0] * 0.04; 
                   }
-                  
-                  // Up/Down stick input adjusts scale
                   if (Math.abs(axes[1]) > 0.1) {
                     this.userScaleMod -= axes[1] * 0.02;
                     this.userScaleMod = Math.min(Math.max(this.userScaleMod, 0.1), 3.0);
@@ -184,11 +161,8 @@
                 }
               }
 
-              // 3. Inject gesture modifications right over raw spatial coordinate space
-              gestureContainer.object3D.rotation.y += this.userRotationY;
+              gestureContainer.object3D.rotation.y = this.userRotationY;
               gestureContainer.object3D.scale.set(this.userScaleMod, this.userScaleMod, this.userScaleMod);
-              
-              gestureContainer.setAttribute('visible', 'true');
             }
           } else {
             statusEl.textContent = "Target lost — point at the cat image";
@@ -214,7 +188,7 @@
     id="scene"
     gesture-detector
     quest-image-tracker
-    webxr="optionalFeatures: image-tracking;"
+    webxr="optionalFeatures: image-tracking, local-floor;"
     mindar-image="imageTargetSrc: targets.mind; autoStart: false;"
     embedded
     renderer="colorManagement: true; antialias: true; alpha: true">
@@ -228,7 +202,7 @@
       <a-cursor raycaster="objects: .clickable" fuse="false"></a-cursor>
     </a-camera>
 
-    <a-entity id="catTarget" mindar-image-target="targetIndex: 0">
+    <a-entity id="catTarget" mindar-image-target="targetIndex: 0" visible="true">
   
       <a-entity 
         id="gestureContainer" 
@@ -278,7 +252,33 @@
       startButton.classList.add("hidden");
 
       if (isHeadset) {
-        sceneEl.enterVR(); 
+        try {
+          setStatus("Initializing Quest Hardware...", "lost");
+          
+          // Force hide standard flat browser styles to clear headset passthrough
+          document.body.classList.add("hide-video");
+
+          const imgEl = document.querySelector('#questTargetImage');
+          if (!imgEl.complete) {
+            await new Promise((resolve) => imgEl.onload = resolve);
+          }
+          const bitmap = await createImageBitmap(imgEl);
+          
+          // Configure the WebXR system before launching AR mode
+          if (sceneEl.systems['webxr']) {
+            sceneEl.systems['webxr'].sessionConfiguration.trackedImages = [
+              {
+                image: bitmap,
+                widthInMeters: 0.2
+              }
+            ];
+          }
+          
+          sceneEl.enterVR(); 
+        } catch (err) {
+          console.error("Quest hardware setup failed:", err);
+          setStatus("Quest AR Error", "lost");
+        }
       } else {
         try {
           const mindarSystem = sceneEl.systems["mindar-image-system"];
@@ -286,7 +286,7 @@
           setStatus("Scanning for cat image…", "lost");
         } catch (error) {
           console.error(error);
-          setStatus("Camera/AR failed to start", "lost");
+          setStatus("Camera failed to start", "lost");
         }
       }
     });
@@ -297,13 +297,6 @@
 
     targetEl.addEventListener("targetLost", () => {
       if(!sceneEl.is('vr-mode')) setStatus("Target lost — point at the cat image", "lost");
-    });
-
-    window.addEventListener("beforeunload", () => {
-      const mindarSystem = sceneEl.systems["mindar-image-system"];
-      if (mindarSystem && !isHeadset) {
-        mindarSystem.stop();
-      }
     });
   </script>
 </body>
