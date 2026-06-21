@@ -75,11 +75,10 @@
 
     #startButton.hidden { display: none; }
 
-    /* Fix: Prevent MindAR video overlays from rendering over WebXR canvas on Headsets */
+    /* Hide standard 2D flat video pipeline when headset is active */
     .hide-video video {
       display: none !important;
       opacity: 0 !important;
-      visibility: hidden !important;
     }
 
     video {
@@ -103,7 +102,6 @@
   </style>
 
   <script>
-    // Handles Quest-specific frame tracking updates
     AFRAME.registerComponent('quest-image-tracker', {
       init: function () {
         this.userRotationY = 0;
@@ -112,13 +110,13 @@
       
       tick: function () {
         const sceneEl = this.el;
-        if (!sceneEl.is('vr-mode')) return;
+        
+        // Match both vr-mode checks or direct XR active states
+        const session = sceneEl.renderer.xr.getSession();
+        if (!session || !sceneEl.is('vr-mode')) return;
         
         const frame = sceneEl.frame;
-        if (!frame) return;
-        
-        const session = sceneEl.renderer.xr.getSession();
-        if (!session || !frame.getImageTrackingResults) return;
+        if (!frame || !frame.getImageTrackingResults) return;
         
         const results = frame.getImageTrackingResults();
         const catTarget = document.querySelector("#catTarget");
@@ -188,14 +186,14 @@
     id="scene"
     gesture-detector
     quest-image-tracker
-    webxr="optionalFeatures: image-tracking, local-floor;"
+    webxr="optionalFeatures: image-tracking; requiredFeatures: local-floor;"
     mindar-image="imageTargetSrc: targets.mind; autoStart: false;"
     embedded
-    renderer="colorManagement: true; antialias: true; alpha: true">
+    renderer="colorManagement: true; antialias: true; alpha: true;">
 
     <a-assets timeout="30000">
       <a-asset-item id="anchoredModel" src="happy.glb"></a-asset-item>
-      <img id="questTargetImage" src="cat-print-target.png" crossorigin="anonymous">
+      <img id="questTargetImage" src="cat-target.jpg" crossorigin="anonymous">
     </a-assets>
 
     <a-camera position="0 0 0" look-controls="false">
@@ -203,7 +201,6 @@
     </a-camera>
 
     <a-entity id="catTarget" mindar-image-target="targetIndex: 0" visible="true">
-  
       <a-entity 
         id="gestureContainer" 
         class="clickable"
@@ -254,8 +251,6 @@
       if (isHeadset) {
         try {
           setStatus("Initializing Quest Hardware...", "lost");
-          
-          // Force hide standard flat browser styles to clear headset passthrough
           document.body.classList.add("hide-video");
 
           const imgEl = document.querySelector('#questTargetImage');
@@ -264,7 +259,6 @@
           }
           const bitmap = await createImageBitmap(imgEl);
           
-          // Configure the WebXR system before launching AR mode
           if (sceneEl.systems['webxr']) {
             sceneEl.systems['webxr'].sessionConfiguration.trackedImages = [
               {
@@ -274,7 +268,8 @@
             ];
           }
           
-          sceneEl.enterVR(); 
+          // CRITICAL FIX: Passing true tells A-Frame to use AR passthrough instead of VR space
+          sceneEl.enterVR(true); 
         } catch (err) {
           console.error("Quest hardware setup failed:", err);
           setStatus("Quest AR Error", "lost");
