@@ -8,7 +8,8 @@
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/aframe-extras@7.5.1/dist/aframe-extras.min.js"></script>
-<script src="https://raw.githack.com/fcor/aframe-gesture-detector-component/master/dist/aframe-gesture-detector.component.min.js"></script>
+  <script src="https://raw.githack.com/fcor/aframe-gesture-detector-component/master/dist/aframe-gesture-detector.component.min.js"></script>
+  
   <style>
     html, body {
       margin: 0;
@@ -73,26 +74,25 @@
     }
 
     #startButton.hidden { display: none; }
-    /* Force the camera video element to the very back layer */
-video {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100% !important;
-  height: 100% !important;
-  object-fit: cover;
-  z-index: 1;
-}
 
-/* Force the 3D graphics canvas to sit right on top of the video but remain see-through */
-.a-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 2;
-}
+    video {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover;
+      z-index: 1;
+    }
+
+    .a-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 2;
+    }
   </style>
 
   <script>
@@ -101,25 +101,24 @@ video {
       init: function () {
         const sceneEl = this.el;
         
+        // Persistent values for Quest inputs so tracking loops don't wipe them out
+        this.userRotationY = 0;
+        this.userScaleMod = 1.0;
+        
         sceneEl.addEventListener('enter-vr', async () => {
-          // Verify if we are entering an AR session on a headset
           if (sceneEl.is('vr-mode') && navigator.xr) {
             const statusEl = document.querySelector("#status");
             statusEl.textContent = "Quest AR Active: Scan your target image...";
             
-            // Get the raw image bitmap for native Quest pipeline
             const imgEl = document.querySelector('#questTargetImage');
             const bitmap = await createImageBitmap(imgEl);
             
-            // Reconfigure WebXR session features on the fly for the Quest hardware
             sceneEl.renderer.xr.addEventListener('sessionstart', async () => {
               const session = sceneEl.renderer.xr.getSession();
-              
-              // Tell the Quest hardware directly what image to look for
               session.updateTrackedImagesProfiles && session.updateTrackedImagesProfiles([
                 {
                   image: bitmap,
-                  widthInMeters: 0.2 // Set this to the estimated size of your printed paper
+                  widthInMeters: 0.2 
                 }
               ]);
             });
@@ -151,30 +150,45 @@ video {
             const pose = frame.getPose(result.imageSpace, refSpace);
             
             if (pose) {
-              // 1. Maintain tracking base position from Quest Passthrough calculations
-              gestureContainer.object3D.matrix.fromArray(pose.transform.matrix);
-              gestureContainer.object3D.matrix.decompose(gestureContainer.object3D.position, gestureContainer.object3D.quaternion, gestureContainer.object3D.scale);
-              gestureContainer.setAttribute('visible', 'true');
+              // 1. Maintain base position & orientation tracking metrics
+              gestureContainer.object3D.matrixAutoUpdate = true;
               
-              // 2. Read Quest thumbsticks on the fly for live rotation and scaling
+              gestureContainer.object3D.position.set(
+                pose.transform.position.x,
+                pose.transform.position.y,
+                pose.transform.position.z
+              );
+              
+              gestureContainer.object3D.quaternion.set(
+                pose.transform.orientation.x,
+                pose.transform.orientation.y,
+                pose.transform.orientation.z,
+                pose.transform.orientation.w
+              );
+              
+              // 2. Continuous accumulation from Quest Thumbsticks
               for (const inputSource of session.inputSources) {
                 if (inputSource.gamepad) {
                   const axes = inputSource.gamepad.axes; 
                   
-                  // Left/Right thumbstick moves rotate the model
+                  // Left/Right stick input adjusts rotation
                   if (Math.abs(axes[0]) > 0.1) {
-                    gestureContainer.object3D.rotation.y += axes[0] * 0.05; 
+                    this.userRotationY += axes[0] * 0.05; 
                   }
                   
-                  // Up/Down thumbstick moves scale the model (Zoom)
+                  // Up/Down stick input adjusts scale
                   if (Math.abs(axes[1]) > 0.1) {
-                    let currentScale = gestureContainer.object3D.scale.x;
-                    let change = -axes[1] * 0.01; 
-                    let newScale = Math.min(Math.max(currentScale + change, 0.05), 1.5);
-                    gestureContainer.object3D.scale.set(newScale, newScale, newScale);
+                    this.userScaleMod -= axes[1] * 0.02;
+                    this.userScaleMod = Math.min(Math.max(this.userScaleMod, 0.1), 3.0);
                   }
                 }
               }
+
+              // 3. Inject gesture modifications right over raw spatial coordinate space
+              gestureContainer.object3D.rotation.y += this.userRotationY;
+              gestureContainer.object3D.scale.set(this.userScaleMod, this.userScaleMod, this.userScaleMod);
+              
+              gestureContainer.setAttribute('visible', 'true');
             }
           } else {
             statusEl.textContent = "Target lost — point at the cat image";
@@ -183,7 +197,7 @@ video {
         }
       }
     });
-</script>
+  </script>
 </head>
 
 <body>
@@ -196,87 +210,48 @@ video {
 
   <button id="startButton">Start AR</button>
 
- <a-scene
-  id="scene"
-  gesture-detector
-  quest-image-tracker
-  webxr="optionalFeatures: image-tracking;"
-  mindar-image="imageTargetSrc: targets.mind; autoStart: false;"
-  embedded
-  renderer="colorManagement: true; antialias: true; alpha: true">
+  <a-scene
+    id="scene"
+    gesture-detector
+    quest-image-tracker
+    webxr="optionalFeatures: image-tracking;"
+    mindar-image="imageTargetSrc: targets.mind; autoStart: false;"
+    embedded
+    renderer="colorManagement: true; antialias: true; alpha: true">
 
-  <a-assets timeout="30000">
-    <a-asset-item id="anchoredModel" src="happy.glb"></a-asset-item>
-    <img id="questTargetImage" src="cat-target.jpg" crossorigin="anonymous">
-  </a-assets>
+    <a-assets timeout="30000">
+      <a-asset-item id="anchoredModel" src="happy.glb"></a-asset-item>
+      <img id="questTargetImage" src="cat-target.jpg" crossorigin="anonymous">
+    </a-assets>
 
-  <a-camera position="0 0 0" look-controls="false"></a-camera>
-
-  <!-- <a-entity id="catTarget" mindar-image-target="targetIndex: 0">
-    
-   <a-entity
-      id="gestureContainer"
-      class="clickable"
-      gesture-handler="minScale: 0.05; maxScale: 1.5;"
-    >
-      
-      <a-gltf-model
-        id="catAugmentation"
-        src="#anchoredModel"
-        position="0 0 0.08"
-        rotation="0 0 0"
-        scale="0.25 0.25 0.25"
-        animation-mixer
-        animation__float="
-          property: position;
-          from: 0 0 0.08;
-          to: 0 0.04 0.12;
-          dur: 1800;
-          dir: alternate;
-          easing: easeInOutSine;
-          loop: true">
-      </a-gltf-model>
-      <a-text
-  id="catDescription"
-  value="Happy Cat\nThis is a 3D digital representation of the our cat Happy."
-  position="0 -0.4 0.1" 
-  rotation="0 0 0"
-  scale="0.4 0.4 0.4"
-  color="#FFFFFF"
-  align="center"
-  font="kelsonsans"
-  width="2">
-</a-text>
-
-    </a-entity> -->
+    <a-camera position="0 0 0" look-controls="false"></a-camera>
 
     <a-entity id="catTarget" mindar-image-target="targetIndex: 0">
   
-  <a-entity 
-    id="gestureContainer" 
-    gesture-handler="minScale: 0.05; maxScale: 2.0;">
-    
-    <a-gltf-model
-      id="catAugmentation"
-      src="#anchoredModel"
-      position="0 0 0.08"
-      rotation="0 0 0"
-      scale="0.25 0.25 0.25"
-      animation-mixer>
-    </a-gltf-model>
+      <a-entity 
+        id="gestureContainer" 
+        class="clickable"
+        gesture-handler="minScale: 0.05; maxScale: 2.0;">
+        
+        <a-gltf-model
+          id="catAugmentation"
+          src="#anchoredModel"
+          position="0 0 0.08"
+          rotation="0 0 0"
+          scale="0.25 0.25 0.25"
+          animation-mixer>
+        </a-gltf-model>
 
-    <a-text
-      id="catDescription"
-      value="Happy Cat"
-      position="0 -0.4 0.1" 
-      align="center"
-      width="2">
-    </a-text>
+        <a-text
+          id="catDescription"
+          value="Happy Cat"
+          position="0 -0.4 0.1" 
+          align="center"
+          width="2">
+        </a-text>
 
-  </a-entity>
-
-</a-entity>
-
+      </a-entity>
+    </a-entity>
     
   </a-scene>
 
@@ -286,7 +261,6 @@ video {
     const statusEl = document.querySelector("#status");
     const targetEl = document.querySelector("#catTarget");
 
-    // Detect if user is on a standard mobile browser vs a standalone XR headset
     const isHeadset = /Quest|Oculus|Pico/i.test(navigator.userAgent);
 
     function setStatus(text, className) {
@@ -299,10 +273,8 @@ video {
       startButton.classList.add("hidden");
 
       if (isHeadset) {
-        // Headset routine: Bypass MindAR camera pipeline entirely and launch native WebXR Passthrough
         sceneEl.enterVR(); 
       } else {
-        // Mobile routine: Use standard MindAR video pixel processing
         try {
           const mindarSystem = sceneEl.systems["mindar-image-system"];
           await mindarSystem.start();
@@ -314,7 +286,6 @@ video {
       }
     });
 
-    // Listeners for Mobile Path
     targetEl.addEventListener("targetFound", () => {
       if(!sceneEl.is('vr-mode')) setStatus("Cat image found — augmentation anchored", "found");
     });
