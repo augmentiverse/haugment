@@ -11,7 +11,7 @@
   <script src="https://raw.githack.com/fcor/aframe-gesture-detector-component/master/dist/aframe-gesture-detector.component.min.js"></script>
   
   <style>
-    /* CRITICAL TRANS-IOS RECOVERY: Force total transparency on all background layers */
+    /* Force completely transparent bounds across all iOS container systems */
     html, body, a-scene {
       background-color: transparent !important;
       background: transparent !important;
@@ -78,15 +78,15 @@
 
     #startButton.hidden { display: none; }
 
-    /* Force Safari camera video to stay locked underneath the WebGL layer */
+    /* Force the video rendering layer to remain visible on iOS */
     body > video {
       position: absolute !important;
       top: 0;
       left: 0;
-      width: 100vw !important;
-      height: 100vh !important;
+      width: 100% !important;
+      height: 100% !important;
       object-fit: cover !important;
-      z-index: -10 !important;
+      z-index: -1 !important;
       display: block !important;
     }
 
@@ -101,7 +101,7 @@
       left: 0;
       width: 100% !important;
       height: 100% !important;
-      z-index: 1 !important;
+      z-index: 2 !important;
     }
   </style>
 
@@ -122,7 +122,7 @@
               }
             ];
           } catch (e) {
-            console.error("WebXR setup failure:", e);
+            console.error("WebXR context initialization dropped:", e);
           }
         });
       }
@@ -193,31 +193,13 @@
         }
       }
     });
-
-    AFRAME.registerComponent('quest-fallback-click', {
-      init: function () {
-        this.el.addEventListener('click', (evt) => {
-          const sceneEl = document.querySelector('#scene');
-          if (sceneEl.is('vr-mode')) {
-            const catTarget = document.querySelector('#catTarget');
-            const intersection = evt.detail.intersection.point;
-            catTarget.object3D.position.set(intersection.x, intersection.y, intersection.z);
-            catTarget.object3D.visible = true;
-            
-            const statusEl = document.querySelector("#status");
-            statusEl.textContent = "Placed via Passthrough Floor Fallback";
-            statusEl.className = "found";
-          }
-        });
-      }
-    });
   </script>
 </head>
 
 <body>
   <div id="overlay">
     <div id="topbar">
-      Point camera at your printed image target. Rotate/scale using pinch gestures (Mobile) or Controller Thumbsticks (Quest).
+      Point camera at your printed image target.
     </div>
     <div id="status" class="lost">AR Initialize Ready</div>
   </div>
@@ -229,38 +211,29 @@
     quest-xr-handler
     gesture-detector
     quest-image-tracker
+    embedded="true"
+    vr-mode-ui="enabled: false"
     webxr="optionalFeatures: image-tracking, local-floor;"
     mindar-image="imageTargetSrc: targets.mind; autoStart: false; uiScanning: no;"
-    embedded
-    renderer="colorManagement: true; antialias: true; alpha: true; logarithmicDepthBuffer: true;">
+    renderer="colorManagement: true; antialias: true; alpha: true;">
 
     <a-assets timeout="30000">
       <a-asset-item id="anchoredModel" src="happy.glb"></a-asset-item>
-      <img id="questTargetImage" src="cat-print-target.png" crossorigin="anonymous">
     </a-assets>
 
-    <a-camera position="0 0 0" look-controls="false">
-      <a-cursor raycaster="objects: .clickable" fuse="false"></a-cursor>
-    </a-camera>
+    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-    <a-entity light="type: ambient; color: #FFF; intensity: 1.2;"></a-entity>
-    <a-entity light="type: directional; color: #FFF; intensity: 0.8" position="-1 2 1"></a-entity>
-
-    <a-plane position="0 -0.01 0" rotation="-90 0 0" width="100" height="100" visible="false" class="clickable" quest-fallback-click></a-plane>
+    <a-entity light="type: ambient; color: #FFF; intensity: 1.5;"></a-entity>
 
     <a-entity id="catTarget" mindar-image-target="targetIndex: 0">
-      <a-entity 
-        id="gestureContainer" 
-        class="clickable"
-        gesture-handler="minScale: 0.05; maxScale: 2.0;">
+      <a-entity id="gestureContainer" class="clickable" gesture-handler>
         
         <a-gltf-model
           id="catAugmentation"
           src="#anchoredModel"
           position="0 0 0"
           rotation="0 0 0"
-          scale="1 1 1"
-          animation-mixer>
+          scale="0.5 0.5 0.5">
         </a-gltf-model>
 
         <a-text
@@ -269,8 +242,7 @@
           position="0 -0.4 0.1" 
           scale="0.6 0.6 0.6"
           color="#00FF00"
-          align="center"
-          width="4">
+          align="center">
         </a-text>
 
       </a-entity>
@@ -292,37 +264,14 @@
       statusEl.classList.add(className);
     }
 
-    function patchIOSVideoElements() {
-      const checkVideoInterval = setInterval(() => {
-        const videos = document.querySelectorAll('video');
-        if (videos.length > 0) {
-          videos.forEach(video => {
-            video.setAttribute('playsinline', '');
-            video.setAttribute('webkit-playsinline', '');
-            video.setAttribute('muted', '');
-            video.muted = true;
-            video.play().catch(e => console.log("iOS Video loop catch triggered:", e));
-          });
-          clearInterval(checkVideoInterval);
-        }
-      }, 200);
-    }
-
     startButton.addEventListener("click", () => {
       startButton.classList.add("hidden");
 
       if (isHeadset) {
-        try {
-          setStatus("Opening Hardware Passthrough...", "lost");
-          document.body.classList.add("hide-video");
-          sceneEl.enterVR(true); 
-        } catch (err) {
-          console.error("Passthrough entry error:", err);
-          setStatus("Quest AR Error", "lost");
-        }
+        document.body.classList.add("hide-video");
+        sceneEl.enterVR(true); 
       } else {
         try {
-          patchIOSVideoElements();
           const mindarSystem = sceneEl.systems["mindar-image-system"];
           if (mindarSystem) {
             mindarSystem.start();
@@ -336,11 +285,11 @@
     });
 
     targetEl.addEventListener("targetFound", () => {
-      if(!sceneEl.is('vr-mode')) setStatus("Cat image found — augmentation anchored", "found");
+      setStatus("Cat image found — augmentation anchored", "found");
     });
 
     targetEl.addEventListener("targetLost", () => {
-      if(!sceneEl.is('vr-mode')) setStatus("Target lost — scan your image target", "lost");
+      setStatus("Target lost — scan your image target", "lost");
     });
   </script>
 </body>
