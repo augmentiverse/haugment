@@ -11,15 +11,13 @@
   <script src="https://raw.githack.com/fcor/aframe-gesture-detector-component/master/dist/aframe-gesture-detector.component.min.js"></script>
   
   <style>
-    /* Force completely transparent bounds across all iOS container systems */
     html, body, a-scene {
-      background-color: transparent !important;
-      background: transparent !important;
       margin: 0;
       width: 100%;
       height: 100%;
       overflow: hidden;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background-color: transparent !important;
     }
 
     #overlay {
@@ -78,34 +76,14 @@
 
     #startButton.hidden { display: none; }
 
-    /* Force the video rendering layer to remain visible on iOS */
-    body > video {
-      position: absolute !important;
-      top: 0;
-      left: 0;
-      width: 100% !important;
-      height: 100% !important;
-      object-fit: cover !important;
-      z-index: -1 !important;
-      display: block !important;
-    }
-
-    .hide-video video {
+    /* Hide the standalone background video and force it inside the environment pipeline */
+    .mindar-ui-scanning {
       display: none !important;
-      opacity: 0 !important;
-    }
-
-    .a-canvas {
-      position: absolute !important;
-      top: 0;
-      left: 0;
-      width: 100% !important;
-      height: 100% !important;
-      z-index: 2 !important;
     }
   </style>
 
   <script>
+    // System to safely handle the Quest 3S hardware handshake layer
     AFRAME.registerSystem('quest-xr-handler', {
       init: function () {
         const sceneEl = this.sceneEl;
@@ -122,9 +100,31 @@
               }
             ];
           } catch (e) {
-            console.error("WebXR context initialization dropped:", e);
+            console.error("WebXR Initialization failure:", e);
           }
         });
+      }
+    });
+
+    // Directly patches the WebGL background clear flags for iOS compatibility
+    AFRAME.registerComponent('ios-background-fix', {
+      init: function () {
+        const sceneEl = this.el;
+        
+        // Force rendering canvas transparency
+        sceneEl.renderer.setClearColor(0x000000, 0);
+        sceneEl.renderer.alpha = true;
+
+        // Force updating scene elements inside the tracking engine loop
+        this.el.addEventListener('render-target-loaded', () => {
+          sceneEl.renderer.setClearColor(0x000000, 0);
+        });
+      },
+      tick: function() {
+        // Keep clearing background loop parameters if mobile canvas locks up
+        if (this.el.renderer && this.el.renderer.getClearAlpha() !== 0) {
+          this.el.renderer.setClearAlpha(0);
+        }
       }
     });
 
@@ -133,7 +133,6 @@
         this.userRotationY = 0;
         this.userScaleMod = 1.0;
       },
-      
       tick: function () {
         const sceneEl = this.el;
         const session = sceneEl.renderer.xr.getSession();
@@ -157,38 +156,10 @@
             const pose = frame.getPose(result.imageSpace, refSpace);
             
             if (pose) {
-              catTarget.object3D.position.set(
-                pose.transform.position.x,
-                pose.transform.position.y,
-                pose.transform.position.z
-              );
-              catTarget.object3D.quaternion.set(
-                pose.transform.orientation.x,
-                pose.transform.orientation.y,
-                pose.transform.orientation.z,
-                pose.transform.orientation.w
-              );
+              catTarget.object3D.position.set(pose.transform.position.x, pose.transform.position.y, pose.transform.position.z);
+              catTarget.object3D.quaternion.set(pose.transform.orientation.x, pose.transform.orientation.y, pose.transform.orientation.z, pose.transform.orientation.w);
               catTarget.object3D.visible = true;
-
-              for (const inputSource of session.inputSources) {
-                if (inputSource.gamepad) {
-                  const axes = inputSource.gamepad.axes; 
-                  if (Math.abs(axes[0]) > 0.1) {
-                    this.userRotationY += axes[0] * 0.04; 
-                  }
-                  if (Math.abs(axes[1]) > 0.1) {
-                    this.userScaleMod -= axes[1] * 0.02;
-                    this.userScaleMod = Math.min(Math.max(this.userScaleMod, 0.1), 3.0);
-                  }
-                }
-              }
-
-              gestureContainer.object3D.rotation.y = this.userRotationY;
-              gestureContainer.object3D.scale.set(this.userScaleMod, this.userScaleMod, this.userScaleMod);
             }
-          } else {
-            statusEl.textContent = "Tracking lost — scan your cat image";
-            statusEl.className = "lost";
           }
         }
       }
@@ -198,9 +169,7 @@
 
 <body>
   <div id="overlay">
-    <div id="topbar">
-      Point camera at your printed image target.
-    </div>
+    <div id="topbar">Point your device at the printed cat target.</div>
     <div id="status" class="lost">AR Initialize Ready</div>
   </div>
 
@@ -211,11 +180,12 @@
     quest-xr-handler
     gesture-detector
     quest-image-tracker
-    embedded="true"
+    ios-background-fix
+    embedded
     vr-mode-ui="enabled: false"
     webxr="optionalFeatures: image-tracking, local-floor;"
     mindar-image="imageTargetSrc: targets.mind; autoStart: false; uiScanning: no;"
-    renderer="colorManagement: true; antialias: true; alpha: true;">
+    renderer="colorManagement: true; antialias: true; alpha: true; transparent: true;">
 
     <a-assets timeout="30000">
       <a-asset-item id="anchoredModel" src="happy.glb"></a-asset-item>
@@ -268,7 +238,6 @@
       startButton.classList.add("hidden");
 
       if (isHeadset) {
-        document.body.classList.add("hide-video");
         sceneEl.enterVR(true); 
       } else {
         try {
